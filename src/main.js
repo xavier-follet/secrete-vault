@@ -84,6 +84,8 @@ function createWindow(port) {
     minWidth: 860,
     minHeight: 560,
     backgroundColor: '#0f1613',
+    // dev runs show the app icon too; the packaged exe already embeds it (build/ is not packed)
+    icon: fs.existsSync(path.join(__dirname, '..', 'build', 'icon.png')) ? path.join(__dirname, '..', 'build', 'icon.png') : undefined,
     title: 'Secrete Vault',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

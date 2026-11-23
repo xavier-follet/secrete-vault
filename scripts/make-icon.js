@@ -1,50 +1,92 @@
 'use strict';
 /**
- * Generates build/icon.png (512x512 RGBA) — a simple lock glyph on a rounded
- * dark tile. Pure Node (zlib), no dependencies. electron-builder converts the
+ * Generates build/icon.png (512x512 RGBA): the vault's combination dial on a
+ * green-black enamel tile, with the gold index mark. Pure Node (zlib), no
+ * dependencies, 4x4 supersampled for smooth edges. electron-builder converts the
  * PNG to .ico for the Windows exe automatically.
- * Run: node scripts/make-icon.js
+ * Run: node scripts/make-icon.js            (writes build/icon.png)
+ *      node scripts/make-icon.js 48 out.png (any size, for previews)
  */
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const S = 512;
-const px = new Uint8Array(S * S * 4); // RGBA, starts transparent
+const S = Number(process.argv[2]) || 512;
+const OUT = process.argv[3] || path.join(__dirname, '..', 'build', 'icon.png');
+const N = 4; // subsamples per axis
 
-function set(x, y, r, g, b, a) {
-  if (x < 0 || y < 0 || x >= S || y >= S) return;
-  const i = (y * S + x) * 4;
-  px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = a;
-}
+const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const TILE = hex('#0f1613'), RIM = hex('#2b3a33'), DISC = hex('#1b2822');
+const IVORY = hex('#e6e9e2'), IVORY_DIM = hex('#b9c2b7');
+const KNOB = hex('#1f2d26'), KNURL = hex('#34463c'), CAP = hex('#0b110e'), GOLD = hex('#d8b45f');
 
-// rounded-rect SDF (negative = inside)
-function rr(x, y, cx, cy, w, h, rad) {
-  const dx = Math.max(Math.abs(x - cx) - (w / 2 - rad), 0);
-  const dy = Math.max(Math.abs(y - cy) - (h / 2 - rad), 0);
+const C = 256; // everything is designed on a 512 grid and scaled by S/512
+
+// rounded-rect signed distance (negative = inside)
+function rr(x, y, w, h, rad) {
+  const dx = Math.max(Math.abs(x - C) - (w / 2 - rad), 0);
+  const dy = Math.max(Math.abs(y - C) - (h / 2 - rad), 0);
   return Math.hypot(dx, dy) - rad;
 }
 
-const BG = [23, 26, 35];        // #171a23 tile
-const ACCENT = [108, 140, 255]; // #6c8cff lock
+// point inside the upward-pointing index triangle (apex top)
+function inIndex(x, y) {
+  const top = 116, bottom = 166, half = 25;
+  if (y < top || y > bottom) return false;
+  return Math.abs(x - C) <= (half * (y - top)) / (bottom - top);
+}
 
-for (let y = 0; y < S; y++) {
-  for (let x = 0; x < S; x++) {
-    // tile: rounded square with 96px corner radius
-    if (rr(x, y, S / 2, S / 2, S, S, 96) <= 0) set(x, y, ...BG, 255);
+/** Colour of one sample point on the 512 grid, or null if transparent. */
+function shade(x, y) {
+  const tile = rr(x, y, 512, 512, 112);
+  if (tile > 0) return null;
+  let col = tile > -4 ? RIM : TILE;
 
-    // shackle: ring (outer r=110, inner r=64) centered at (256, 218), upper half
-    const dShackle = Math.hypot(x - 256, y - 218);
-    if (y <= 218 && dShackle <= 110 && dShackle >= 64) set(x, y, ...ACCENT, 255);
+  const dx = x - C, dy = y - C;
+  const d = Math.hypot(dx, dy);
+  const ang = (Math.atan2(dx, -dy) + Math.PI * 2) % (Math.PI * 2); // 0 = 12 o'clock, clockwise
 
-    // body: rounded rect 250x190 centered at (256, 330)
-    if (rr(x, y, 256, 330, 250, 190, 34) <= 0) set(x, y, ...ACCENT, 255);
+  if (d <= 212) col = DISC;
 
-    // keyhole: circle at (256, 310) r=30 + stem rect below, punched in tile color
-    const dKey = Math.hypot(x - 256, y - 310);
-    if (dKey <= 30 || (Math.abs(x - 256) <= 16 && y > 310 && y < 372)) {
-      set(x, y, ...BG, 255);
+  // 60 ticks, every 5th a long ivory one
+  if (d >= 150 && d <= 204) {
+    const step = (Math.PI * 2) / 60;
+    const k = Math.round(ang / step);
+    const off = Math.abs(ang - k * step) * d; // arc distance to the nearest tick
+    const major = k % 5 === 0;
+    if (major ? d >= 152 && off <= 4.5 : d >= 178 && off <= 2.2) col = major ? IVORY : IVORY_DIM;
+  }
+  if (Math.abs(d - 144) <= 1.5) col = RIM;
+
+  // knob with a knurled edge
+  if (d <= 134) {
+    col = KNOB;
+    if (d >= 112) col = Math.floor(ang / ((Math.PI * 2) / 56)) % 2 === 0 ? KNURL : KNOB;
+  }
+  if (d <= 96) col = d >= 93.5 ? RIM : CAP;
+
+  // keyhole: round head plus a widening stem
+  if (Math.hypot(x - C, y - 240) <= 24 || (y >= 250 && y <= 306 && Math.abs(x - C) <= 9 + (y - 250) * 0.14)) {
+    if (d <= 92) col = IVORY;
+  }
+
+  if (inIndex(x, y)) col = GOLD;
+  return col;
+}
+
+const px = Buffer.alloc(S * S * 4);
+const scale = 512 / S;
+for (let py = 0; py < S; py++) {
+  for (let pxl = 0; pxl < S; pxl++) {
+    let r = 0, g = 0, b = 0, a = 0;
+    for (let sy = 0; sy < N; sy++) {
+      for (let sx = 0; sx < N; sx++) {
+        const c = shade((pxl + (sx + 0.5) / N) * scale, (py + (sy + 0.5) / N) * scale);
+        if (c) { r += c[0]; g += c[1]; b += c[2]; a += 1; }
+      }
     }
+    const i = (py * S + pxl) * 4;
+    if (a) { px[i] = r / a; px[i + 1] = g / a; px[i + 2] = b / a; px[i + 3] = Math.round((a / (N * N)) * 255); }
   }
 }
 
@@ -74,12 +116,11 @@ ihdr.writeUInt32BE(S, 0);
 ihdr.writeUInt32BE(S, 4);
 ihdr[8] = 8;  // bit depth
 ihdr[9] = 6;  // color type RGBA
-ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
 
 const raw = Buffer.alloc(S * (1 + S * 4));
 for (let y = 0; y < S; y++) {
   raw[y * (1 + S * 4)] = 0; // filter: none
-  Buffer.from(px.buffer, y * S * 4, S * 4).copy(raw, y * (1 + S * 4) + 1);
+  px.copy(raw, y * (1 + S * 4) + 1, y * S * 4, (y + 1) * S * 4);
 }
 
 const png = Buffer.concat([
@@ -89,7 +130,6 @@ const png = Buffer.concat([
   chunk('IEND', Buffer.alloc(0)),
 ]);
 
-const outDir = path.join(__dirname, '..', 'build');
-fs.mkdirSync(outDir, { recursive: true });
-fs.writeFileSync(path.join(outDir, 'icon.png'), png);
-console.log('wrote build/icon.png', png.length, 'bytes');
+fs.mkdirSync(path.dirname(OUT), { recursive: true });
+fs.writeFileSync(OUT, png);
+console.log('wrote', OUT, png.length, 'bytes');
