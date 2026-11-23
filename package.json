@@ -1,0 +1,55 @@
+{
+  "name": "secrete-vault",
+  "version": "1.0.0",
+  "description": "Local encrypted secret vault (Electron). Leaves your machine only if you turn on the Google Drive backup.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/vault.test.js && node test/drive.test.js",
+    "test:smoke": "electron test/smoke.js --no-sandbox",
+    "icon": "node scripts/make-icon.js",
+    "dist": "electron-builder --win --publish never"
+  },
+  "build": {
+    "appId": "com.secretevault.app",
+    "productName": "Secrete Vault",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "package.json",
+      "src/**/*",
+      "renderer/**/*",
+      "!test/**/*",
+      "!scripts/**/*",
+      "!build/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Secrete Vault",
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-portable.${ext}"
+    }
+  },
+  "license": "MIT",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^26.18.0"
+  }
+}

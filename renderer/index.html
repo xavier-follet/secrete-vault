@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'" />
+  <title>Secrete Vault</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-view="">
+
+  <!-- ============ ICON SPRITE ============ -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3m-4 4 3 3m-5-1 2 2"/></symbol>
+      <symbol id="i-note" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V7a2 2 0 0 1 2-2h8"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/></symbol>
+      <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+      <symbol id="i-passkey" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 3-6 6.5-6"/><circle cx="17" cy="14.5" r="2.5"/><path d="M17 17v4m0-2h2"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    </defs>
+  </svg>
+
+  <!-- ============ DIAL (setup + unlock) ============ -->
+  <div class="dial" id="dial" aria-hidden="true">
+    <svg viewBox="0 0 400 400">
+      <g id="dial-ring"></g>
+      <circle class="dial-knob" cx="200" cy="200" r="104"/>
+      <circle class="dial-knurl" cx="200" cy="200" r="98"/>
+      <circle class="dial-cap" cx="200" cy="200" r="62"/>
+      <path class="dial-index" d="M200 150 188 130h24z"/>
+    </svg>
+  </div>
+
+  <!-- ============ SETUP (first run) ============ -->
+  <section id="view-setup" class="view gate" data-step="1">
+    <div class="gate-main">
+      <h1 class="wordmark">Secrete Vault</h1>
+      <p class="lede">Your secrets are encrypted on this device. Nothing is sent anywhere unless you turn on Drive backup.</p>
+
+      <ol class="steps" aria-label="Setup progress">
+        <li>Master password</li>
+        <li>Second check</li>
+        <li>Recovery codes</li>
+      </ol>
+
+      <!-- step 1: master password -->
+      <div class="step" id="setup-step-password">
+        <h2>Choose a master password</h2>
+        <label for="setup-password">Password <span class="hint">at least 8 characters</span></label>
+        <input type="password" id="setup-password" autocomplete="new-password" />
+        <label for="setup-password2">Repeat password</label>
+        <input type="password" id="setup-password2" autocomplete="new-password" />
+        <div class="meter" aria-hidden="true"><div id="pw-meter"></div></div>
+        <div class="meter-label" id="pw-meter-label" aria-live="polite"></div>
+        <p class="error" id="setup-pw-error" role="alert"></p>
+        <button class="btn primary" id="setup-pw-next">Continue</button>
+      </div>
+
+      <!-- step 2: 2FA choice -->
+      <div class="step hidden" id="setup-step-2fa">
+        <h2>Add a second check <span class="hint">optional</span></h2>
+        <div class="choice-row">
+          <button class="btn choice" id="choose-totp">
+            <svg class="ic"><use href="#i-phone"/></svg>
+            <span><b>Authenticator app</b><span class="sub">Enter a 6-digit code each time you unlock</span></span>
+          </button>
+          <button class="btn choice" id="choose-passkey">
+            <svg class="ic"><use href="#i-passkey"/></svg>
+            <span><b>Passkey</b><span class="sub">Use Windows Hello or your device biometrics</span></span>
+          </button>
+          <button class="btn quiet" id="choose-skip">Skip for now</button>
+        </div>
+
+        <div class="hidden sub-panel" id="setup-totp">
+          <p class="hint-block">Scan the QR code with your authenticator app, then enter the 6-digit code it shows.</p>
+          <div class="qr-wrap"><img id="totp-qr" alt="QR code for your authenticator app" /></div>
+          <p class="hint-block">Can't scan? Enter this key instead:
+            <code id="totp-secret" class="secret-key"></code>
+            <button class="btn tiny" id="totp-copy">Copy key</button></p>
+          <label for="totp-code">Verification code</label>
+          <input type="text" id="totp-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="mono" placeholder="123456" />
+          <p class="error" id="totp-error" role="alert"></p>
+          <div class="row">
+            <button class="btn" id="totp-back">Back</button>
+            <button class="btn primary" id="totp-verify">Verify and enable</button>
+          </div>
+        </div>
+
+        <div class="hidden sub-panel" id="setup-passkey">
+          <p class="hint-block">Create a passkey protected by this device's biometrics or PIN (Windows Hello, Touch ID).</p>
+          <label for="passkey-name">Passkey name</label>
+          <input type="text" id="passkey-name" placeholder="e.g. My laptop" maxlength="40" />
+          <p class="error" id="passkey-error" role="alert"></p>
+          <div class="row">
+            <button class="btn" id="passkey-back">Back</button>
+            <button class="btn primary" id="passkey-create">Create passkey</button>
+          </div>
+          <p class="ok hidden" id="passkey-ok" role="status">Passkey registered.</p>
+        </div>
+      </div>
+
+      <!-- step 3: recovery codes -->
+      <div class="step hidden" id="setup-step-recovery">
+        <h2>Save your recovery codes</h2>
+        <p class="hint-block">If you forget your password, <b>one</b> of these codes gets you back in. Each code works once. They are shown only now, so store them somewhere safe.</p>
+        <div class="codes" id="recovery-codes"></div>
+        <div class="row">
+          <button class="btn" id="recovery-copy"><svg class="ic"><use href="#i-copy"/></svg>Copy all</button>
+          <button class="btn" id="recovery-download"><svg class="ic"><use href="#i-download"/></svg>Download .txt</button>
+        </div>
+        <p class="error" id="recovery-error" role="alert"></p>
+        <div class="row">
+          <button class="btn" id="recovery-back">Back</button>
+          <button class="btn primary" id="recovery-open">I saved them, open vault</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ UNLOCK ============ -->
+  <section id="view-unlock" class="view gate">
+    <div class="gate-main">
+      <h1 class="wordmark">Secrete Vault</h1>
+      <p class="lede small" id="vault-path"></p>
+
+      <div id="unlock-password-wrap">
+        <label for="unlock-password">Master password</label>
+        <input type="password" id="unlock-password" autocomplete="current-password" autofocus />
+        <p class="error" id="unlock-error" role="alert"></p>
+        <button class="btn primary full" id="unlock-btn">Unlock</button>
+        <p class="aside"><a href="#" id="show-recovery">Use a recovery code instead</a></p>
+      </div>
+
+      <div id="unlock-2fa-wrap" class="hidden">
+        <h2>Second check</h2>
+        <div id="unlock-totp-wrap">
+          <label for="unlock-totp">Authenticator code</label>
+          <input type="text" id="unlock-totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" class="mono" placeholder="123456" autofocus />
+          <p class="error" id="unlock-totp-error" role="alert"></p>
+          <button class="btn primary full" id="unlock-totp-btn">Verify</button>
+        </div>
+        <div id="unlock-passkey-wrap">
+          <p class="hint-block">Or use your passkey:</p>
+          <button class="btn full" id="unlock-passkey-btn"><svg class="ic"><use href="#i-passkey"/></svg>Use passkey</button>
+          <p class="error" id="unlock-passkey-error" role="alert"></p>
+        </div>
+        <p class="aside"><a href="#" id="unlock-back">Back to password</a></p>
+      </div>
+
+      <div id="unlock-recovery-wrap" class="hidden">
+        <h2>Unlock with a recovery code</h2>
+        <label for="unlock-recovery">Recovery code</label>
+        <input type="text" id="unlock-recovery" class="mono" placeholder="XXXXX-XXXXX-XXXXX" autocomplete="off" />
+        <p class="error" id="unlock-recovery-error" role="alert"></p>
+        <button class="btn primary full" id="unlock-recovery-btn">Unlock with code</button>
+        <p class="aside"><a href="#" id="recovery-back">Back to password</a></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VAULT ============ -->
+  <section id="view-vault" class="view">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span class="wordmark small">Secrete Vault</span>
+        <button class="btn tiny" id="btn-lock" title="Lock now"><svg class="ic"><use href="#i-lock"/></svg>Lock</button>
+      </div>
+      <input type="search" id="search" aria-label="Search secrets" placeholder="Search secrets" />
+      <ul id="secret-list" class="secret-list"></ul>
+      <div class="add-row">
+        <button class="btn" id="btn-new-login"><svg class="ic"><use href="#i-plus"/></svg>Password</button>
+        <button class="btn" id="btn-new-note"><svg class="ic"><use href="#i-plus"/></svg>Note</button>
+      </div>
+      <button class="nav-link" id="btn-security" aria-pressed="false"><svg class="ic"><use href="#i-shield"/></svg>Security</button>
+    </aside>
+
+    <main class="detail">
+      <div id="detail-empty" class="empty">
+        <h2>Nothing selected</h2>
+        <p>Pick a secret from the list, or add a new one.</p>
+        <div class="row">
+          <button class="btn primary" data-new="login">Add password</button>
+          <button class="btn" data-new="note">Add note</button>
+        </div>
+      </div>
+
+      <form id="detail-form" class="record hidden">
+        <div class="detail-head">
+          <input type="text" id="f-title" class="title-input" aria-label="Title" placeholder="Untitled secret" required maxlength="120" />
+        </div>
+
+        <div id="f-login-fields">
+          <div class="field">
+            <label for="f-username">Username</label>
+            <div class="input-action">
+              <input type="text" id="f-username" class="mono" placeholder="username or email" autocomplete="off" />
+              <button type="button" class="icon-btn" data-copy="f-username" aria-label="Copy username" title="Copy username"><svg class="ic"><use href="#i-copy"/></svg></button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="f-password">Password</label>
+            <div class="input-action">
+              <input type="text" id="f-password" class="mono" placeholder="password" autocomplete="off" />
+              <button type="button" class="icon-btn" id="f-eye" aria-label="Show password" aria-pressed="false" title="Show or hide"><svg class="ic"><use href="#i-eye"/></svg></button>
+              <button type="button" class="icon-btn" data-copy="f-password" aria-label="Copy password" title="Copy password"><svg class="ic"><use href="#i-copy"/></svg></button>
+              <button type="button" class="btn tiny gen-btn" id="f-gen" title="Generate a random password"><svg class="ic"><use href="#i-shuffle"/></svg>Generate</button>
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-label" id="gen-label">Generator</span>
+            <div class="gen-options" id="gen-options" role="group" aria-labelledby="gen-label">
+              <label class="gen-length">Length <input type="number" id="gen-length" value="20" min="8" max="64" /></label>
+              <label class="chip"><input type="checkbox" id="gen-upper" checked /><span>A–Z</span></label>
+              <label class="chip"><input type="checkbox" id="gen-lower" checked /><span>a–z</span></label>
+              <label class="chip"><input type="checkbox" id="gen-digits" checked /><span>0–9</span></label>
+              <label class="chip"><input type="checkbox" id="gen-symbols" checked /><span>!@#</span></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="field stacked">
+          <label id="f-text-label" for="f-text">Notes</label>
+          <textarea id="f-text" rows="8" placeholder="Anything you want to keep secret"></textarea>
+        </div>
+
+        <div class="row actions">
+          <button type="submit" class="btn primary">Save</button>
+          <button type="button" class="btn quiet danger" id="f-delete">Delete</button>
+          <span class="meta" id="f-meta"></span>
+        </div>
+        <p class="error" id="f-error" role="alert"></p>
+        <p class="ok" id="f-ok" role="status"></p>
+      </form>
+
+      <!-- Security view (replaces the old sidebar <details>) -->
+      <section class="security-panel hidden" id="security-view" aria-labelledby="security-title">
+        <h1 id="security-title" class="view-title">Security</h1>
+
+        <div class="sec-block">
+          <h2>Master password</h2>
+          <div class="field">
+            <label for="cp-current">Current</label>
+            <input type="password" id="cp-current" autocomplete="current-password" />
+          </div>
+          <div class="field">
+            <label for="cp-new">New</label>
+            <input type="password" id="cp-new" autocomplete="new-password" />
+          </div>
+          <div class="row">
+            <button class="btn" id="cp-btn">Change password</button>
+          </div>
+          <p class="error" id="cp-error" role="alert"></p><p class="ok" id="cp-ok" role="status"></p>
+        </div>
+
+        <div class="sec-block">
+          <h2>Second check</h2>
+          <p class="hint-block" id="sec-2fa-status"></p>
+          <div class="row">
+            <button class="btn" id="sec-add-totp"><svg class="ic"><use href="#i-phone"/></svg>Add authenticator</button>
+            <button class="btn" id="sec-add-passkey"><svg class="ic"><use href="#i-passkey"/></svg>Add passkey</button>
+            <button class="btn quiet danger" id="sec-disable-totp">Turn off authenticator</button>
+          </div>
+
+          <div class="hidden sub-panel" id="sec-totp-box">
+            <p class="hint-block">Scan with your authenticator app, then enter the 6-digit code.</p>
+            <div class="qr-wrap small"><img id="sec-totp-qr" alt="QR code for your authenticator app" /></div>
+            <p class="hint-block">Can't scan? Enter this key instead:
+              <code id="sec-totp-secret" class="secret-key"></code>
+              <button class="btn tiny" id="sec-totp-copy">Copy key</button></p>
+            <div class="field">
+              <label for="sec-totp-code">Code</label>
+              <input type="text" id="sec-totp-code" class="mono" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456" />
+            </div>
+            <div class="row">
+              <button class="btn" id="sec-totp-cancel">Cancel</button>
+              <button class="btn primary" id="sec-totp-verify">Verify and enable</button>
+            </div>
+          </div>
+
+          <div class="hidden sub-panel" id="sec-passkey-box">
+            <div class="field">
+              <label for="sec-passkey-name">Name</label>
+              <input type="text" id="sec-passkey-name" placeholder="e.g. My laptop" maxlength="40" />
+            </div>
+            <div class="row">
+              <button class="btn" id="sec-passkey-cancel">Cancel</button>
+              <button class="btn primary" id="sec-passkey-create">Create passkey</button>
+            </div>
+          </div>
+
+          <ul id="sec-passkeys" class="passkey-list"></ul>
+          <p class="error" id="sec-error" role="alert"></p><p class="ok" id="sec-ok" role="status"></p>
+        </div>
+
+        <div class="sec-block">
+          <h2>Recovery codes</h2>
+          <p class="hint-block">Making new codes makes every old code stop working.</p>
+          <div class="row">
+            <button class="btn" id="sec-rotate">Make new codes</button>
+          </div>
+          <div class="codes hidden" id="sec-codes"></div>
+          <div class="row hidden" id="sec-codes-actions">
+            <button class="btn" id="sec-codes-copy"><svg class="ic"><use href="#i-copy"/></svg>Copy all</button>
+            <button class="btn" id="sec-codes-download"><svg class="ic"><use href="#i-download"/></svg>Download .txt</button>
+          </div>
+        </div>
+
+        <div class="sec-block" id="backup-block">
+          <h2>Backup to Google Drive</h2>
+          <p class="hint-block">Keeps an encrypted copy of your vault in your own Drive and updates it after every change. Google only ever sees the encrypted file, so use a strong master password.</p>
+          <p class="hint-block" id="bk-status"></p>
+
+          <div class="hidden" id="bk-setup">
+            <details class="how">
+              <summary>How to get a client ID and secret</summary>
+              <ol>
+                <li>In Google Cloud Console, create a project and turn on the Google Drive API.</li>
+                <li>Open the OAuth consent screen, choose External, and enter an app name and your email.</li>
+                <li>Publish the app. While it is in testing, Google signs you out after 7 days.</li>
+                <li>Create an OAuth client of type Desktop app, then copy its client ID and secret here.</li>
+              </ol>
+            </details>
+            <div class="field">
+              <label for="bk-client-id">Client ID</label>
+              <input type="text" id="bk-client-id" class="mono" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="bk-client-secret">Client secret</label>
+              <input type="password" id="bk-client-secret" autocomplete="off" />
+            </div>
+            <div class="row">
+              <button class="btn primary" id="bk-connect">Connect Google Drive</button>
+            </div>
+          </div>
+
+          <div class="row hidden" id="bk-connected">
+            <button class="btn" id="bk-now">Back up now</button>
+            <button class="btn quiet danger" id="bk-disconnect">Disconnect</button>
+          </div>
+          <p class="error" id="bk-error" role="alert"></p>
+        </div>
+
+        <p class="hint-block file-line">Vault file <code id="sec-path"></code></p>
+      </section>
+    </main>
+  </section>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
