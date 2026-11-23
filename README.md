@@ -71,6 +71,8 @@ Security view, "Backup to Google Drive". After you connect it, the app uploads
 - The backup can be attacked offline, so the master password is the only
   protection: use a strong one.
 
+See [PRIVACY.md](PRIVACY.md) for what the app does with your data.
+
 ### Look and feel
 "Enamel safe": green-black painted steel, ivory lettering, and a combination
 dial on the setup and unlock screens that clicks once per keystroke. Fonts are
