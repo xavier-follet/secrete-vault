@@ -1,6 +1,6 @@
 {
   "name": "secrete-vault",
-  "version": "1.0.0",
+  "version": "0.1.1",
   "description": "Local encrypted secret vault (Electron). Leaves your machine only if you turn on the Google Drive backup.",
   "main": "src/main.js",
   "scripts": {

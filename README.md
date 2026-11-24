@@ -18,8 +18,8 @@ npm run dist       # build Windows exe into dist/
 
 | File | What it is |
 |---|---|
-| `dist/Secrete Vault-Setup-1.0.0-x64.exe` | NSIS installer (install dir choice, desktop + start-menu shortcuts, uninstaller) |
-| `dist/Secrete Vault-1.0.0-x64-portable.exe` | single portable exe, runs from anywhere (vault still goes to `%APPDATA%\Secrete Vault\vault.dat`) |
+| `dist/Secrete Vault-Setup-0.1.1-x64.exe` | NSIS installer (install dir choice, desktop + start-menu shortcuts, uninstaller) |
+| `dist/Secrete Vault-0.1.1-x64-portable.exe` | single portable exe, runs from anywhere (vault still goes to `%APPDATA%\Secrete Vault\vault.dat`) |
 
 The app is packed into an asar archive with a custom lock icon
 (`npm run icon` regenerates `build/icon.png`). The exe is **unsigned** —
