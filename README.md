@@ -44,9 +44,14 @@ distributing widely.
   - **Title**
   - **Login** → username + password (show/hide, copy, built-in generator)
   - **Note** → free text
-- Save / delete, change master password, manage 2FA and recovery codes in
+- A new secret is saved with **Save**; from then on every edit autosaves. A
+  validation error (for example an empty title) pauses autosave and shows the
+  message. Leaving an unsaved secret (opening another, Security, the Lock
+  button, closing the window) asks first.
+- Auto-lock after 5 minutes idle keeps an unsaved draft in the form and
+  restores it when you unlock. The Lock button locks instantly.
+- Delete, change master password, manage 2FA and recovery codes in
   *Security settings*.
-- Auto-locks after 5 minutes idle; the Lock button locks instantly.
 - Security view (sidebar, bottom): change master password, manage the
   authenticator and passkeys, make new recovery codes.
 

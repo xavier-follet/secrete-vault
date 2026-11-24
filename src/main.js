@@ -7,7 +7,7 @@
  * on macOS) and exposes a minimal IPC API to the renderer. The decrypted
  * vault only ever lives in this process's memory.
  */
-const { app, BrowserWindow, ipcMain, shell, Menu, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, safeStorage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -98,6 +98,18 @@ function createWindow(port) {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) shell.openExternal(url);
     return { action: 'deny' };
+  });
+  // the renderer blocks unload while a secret has unsaved edits; ask before closing anyway
+  win.webContents.on('will-prevent-unload', (e) => {
+    const stay = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      message: "This secret isn't saved.",
+      detail: 'If you close Secrete Vault now, your changes are lost.',
+      buttons: ['Keep editing', 'Close and lose changes'],
+      defaultId: 0,
+      cancelId: 0,
+    }) === 0;
+    if (!stay) e.preventDefault(); // preventDefault here lets the window close
   });
   win.on('closed', () => { vault.lock(); win = null; });
 }

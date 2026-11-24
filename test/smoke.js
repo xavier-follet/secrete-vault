@@ -134,6 +134,34 @@ app.whenReady().then(async () => {
       $('#f-gen').click();
       await waitFor(() => $('#f-password').value.length > 0);
       out.genBtnFillsPassword = $('#f-password').value.length === 28;
+      // unsaved new login: leaving asks first; the first Save switches it to autosave
+      const typed = (sel, v) => { $(sel).value = v; $(sel).dispatchEvent(new Event('input', { bubbles: true })); };
+      let asked = 0;
+      window.confirm = () => { asked++; return false; };
+      out.newIsDirty = state.dirty === true;
+      $('#btn-new-note').click();
+      await sleep(150);
+      out.leaveAsked = asked === 1 && state.currentType === 'login';
+      typed('#f-title', 'Autosave me');
+      $('#detail-form').requestSubmit();
+      await waitFor(() => !!state.currentId && !state.dirty);
+      const autoId = state.currentId;
+      typed('#f-text', 'edited');
+      await sleep(1300);
+      out.autosaved = (await api.getSecret({ id: autoId })).secret.text === 'edited' && !state.dirty;
+      typed('#f-title', '');
+      await sleep(1300);
+      out.validationBlocksAutosave = state.dirty && $('#f-error').textContent.includes('Title')
+        && (await api.getSecret({ id: autoId })).secret.title === 'Autosave me';
+      asked = 0;
+      $('#btn-lock').click();
+      await sleep(150);
+      out.lockAsked = asked === 1 && state.unlocked === true;
+      window.confirm = () => true; // discard the draft and clean up
+      $('#btn-new-login').click();
+      await sleep(250);
+      await api.deleteSecret({ id: autoId });
+      out.discarded = state.dirty === false;
       const got = await api.getSecret({ id: out.savedId });
       out.gotPassword = got.secret.password; // expect Xq7!secret-pw-9931
       const gen = await api.generatePassword({ length: 24 });
@@ -154,6 +182,11 @@ app.whenReady().then(async () => {
     check('＋ Password button opens a login form', r2.loginBtnShowsLoginForm === true);
     check('generator options visible in login form', r2.genOptionsVisible === true);
     check('🔄 Generate button fills password (28 chars)', r2.genBtnFillsPassword === true, r2.genBtnFillsPassword);
+    check('unsaved new secret is flagged and asks before leaving', r2.newIsDirty && r2.leaveAsked, [r2.newIsDirty, r2.leaveAsked]);
+    check('after the first save, edits autosave', r2.autosaved === true);
+    check('validation error blocks autosave and keeps the warning', r2.validationBlocksAutosave === true);
+    check('manual lock asks about unsaved edits', r2.lockAsked === true);
+    check('discarding clears the unsaved state', r2.discarded === true);
     check('get returns decrypted password', r2.gotPassword === 'Xq7!secret-pw-9931', r2.gotPassword);
     check('password generator works', r2.genLen === 24);
     check('TOTP start works while unlocked', r2.totpStartOk === true);
@@ -168,8 +201,12 @@ app.whenReady().then(async () => {
         while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(100); }
         return false;
       };
+      // an unsaved draft must survive a lock that did not come from the Lock button (same event as auto-lock)
+      $('#f-title').value = 'Draft kept';
+      $('#f-title').dispatchEvent(new Event('input', { bubbles: true }));
       await api.lock();
       out.unlockViewVisible = await waitFor(() => $('#view-unlock').classList.contains('active'));
+      out.draftKeptOnLock = $('#f-title').value === 'Draft kept' && state.dirty === true;
       $('#unlock-password').value = 'nope-nope-nope';
       $('#unlock-btn').click();
       await waitFor(() => $('#unlock-error').textContent.length > 0);
@@ -209,6 +246,7 @@ app.whenReady().then(async () => {
       out.recoveryStepOk = await waitFor(() => $('#unlock-recovery-error').textContent.length > 0) === false;
       out.vaultViewAfterRecovery = await waitFor(() => $('#view-vault').classList.contains('active'));
       out.unlockedAfterRecovery = (await api.status()).unlocked === true;
+      out.draftAfterUnlock = $('#f-title').value === 'Draft kept' && !$('#detail-form').classList.contains('hidden');
 
       const cp = await api.changePassword({ current: 'smoke-test-password-1', next: 'smoke-test-password-2' });
       out.changePw = cp;
@@ -230,6 +268,7 @@ app.whenReady().then(async () => {
 
     check('recovery code unlocks via UI (bypasses 2FA)', r5.recoveryStepOk === true && r5.unlockedAfterRecovery === true);
     check('vault view after recovery unlock', r5.vaultViewAfterRecovery === true);
+    check('unsaved draft is kept through a lock and unlock', r3.draftKeptOnLock === true && r5.draftAfterUnlock === true, [r3.draftKeptOnLock, r5.draftAfterUnlock]);
     check('change password ok', r5.changePw.ok === true, r5.changePw);
     check('vault locks', r5.lockedStatus.unlocked === false);
     check('old password fails after change', r5.unlockOld.ok === false);

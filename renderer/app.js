@@ -184,7 +184,10 @@ const state = {
   currentId: null,
   currentType: 'login',
   unlocked: false,
+  dirty: false,           // the open form has edits that are not saved yet
+  rev: 0,                 // bumps on every edit, so a save knows if newer edits arrived meanwhile
 };
+let autosaveTimer = null;
 
 /* ---------------- boot ---------------- */
 async function boot() {
@@ -201,11 +204,15 @@ async function boot() {
   api.onLocked(() => {
     state.unlocked = false;
     state.secrets = [];
-    state.currentId = null;
+    clearTimeout(autosaveTimer);
+    // an unsaved draft survives the lock; anything else is wiped from the form
+    if (!state.dirty) { state.currentId = null; $('#detail-form').reset(); }
     showView('unlock');
     resetUnlockForm();
-    toast('Vault locked after 5 minutes idle');
+    toast(state.dirty ? 'Vault locked. Your unsaved edits are kept until you unlock.' : 'Vault locked');
   });
+  // closing the window: main shows the warning dialog when this blocks the unload
+  window.addEventListener('beforeunload', (e) => { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
 }
 
 /* ---------------- setup flow ---------------- */
@@ -388,11 +395,21 @@ async function enterVault() {
   await refreshSecurityPanel();
 }
 
-async function refreshSecrets(selectId) {
+async function reloadList() {
   const r = await api.listSecrets();
-  if (!r.ok) { if (r.locked) { showView('unlock'); } return; }
+  if (!r.ok) { if (r.locked) { showView('unlock'); } return false; }
   state.secrets = r.secrets;
   renderList();
+  return true;
+}
+
+async function refreshSecrets(selectId) {
+  if (!(await reloadList())) return;
+  if (state.dirty) { // keep the draft in the form; resume saving it if it belongs to a saved secret
+    $('#f-error').textContent = '';
+    scheduleAutosave();
+    return;
+  }
   if (selectId) selectSecret(selectId);
   else if (state.currentId) selectSecret(state.currentId);
   else showEmpty();
@@ -417,7 +434,7 @@ function renderList() {
     if (s.id === state.currentId) li.classList.add('active');
     li.innerHTML = icon(s.type === 'note' ? 'note' : 'key') + `<span class="t">${escapeHtml(s.title)}</span>` +
       (s.username ? `<span class="u">${escapeHtml(s.username)}</span>` : '');
-    li.addEventListener('click', () => selectSecret(s.id));
+    li.addEventListener('click', async () => { if (await canLeave()) selectSecret(s.id); });
     ul.appendChild(li);
   }
 }
@@ -442,7 +459,32 @@ function setEye(show) {
   eye.innerHTML = icon(show ? 'eye-off' : 'eye');
 }
 
+/** Called before the form is replaced or the vault locked by hand. False = the user chose to stay. */
+async function canLeave() {
+  if (!state.dirty) return true;
+  if (state.currentId) await saveCurrentSecret(); // flush a pending autosave
+  if (!state.dirty) return true;
+  return confirm("This secret isn't saved. Leave and lose your changes?");
+}
+
+function scheduleAutosave() {
+  clearTimeout(autosaveTimer);
+  if (state.dirty && state.currentId && state.unlocked) autosaveTimer = setTimeout(saveCurrentSecret, 700);
+}
+
+function markDirty() {
+  state.dirty = true;
+  state.rev++;
+  scheduleAutosave();
+}
+
+function resetDirty() {
+  clearTimeout(autosaveTimer);
+  state.dirty = false;
+}
+
 function showEmpty() {
+  resetDirty();
   state.currentId = null;
   showPane('empty');
   $$('#secret-list li').forEach((li) => li.classList.remove('active'));
@@ -452,6 +494,7 @@ async function selectSecret(id) {
   const r = await api.getSecret({ id });
   if (!r.ok || !r.secret) { showEmpty(); return; }
   const s = r.secret;
+  resetDirty();
   state.currentId = id;
   state.currentType = s.type;
   $$('#secret-list li').forEach((li) => li.classList.toggle('active', li.dataset.id === id));
@@ -474,7 +517,9 @@ function setTypeUI(type) {
   $('#f-text-label').textContent = login ? 'Notes' : 'Secret text';
 }
 
-function showNewForm(type = 'login') {
+async function showNewForm(type = 'login') {
+  if (!(await canLeave())) return;
+  resetDirty();
   state.currentId = null;
   $$('#secret-list li').forEach((li) => li.classList.remove('active'));
   showPane('form');
@@ -499,11 +544,22 @@ async function saveCurrentSecret() {
     password: $('#f-password').value,
     text: $('#f-text').value,
   };
+  clearTimeout(autosaveTimer);
+  const rev = state.rev;
   const r = await api.saveSecret({ secret });
-  if (!r.ok) { $('#f-error').textContent = r.error; return; }
+  if (!r.ok) {
+    if (!r.locked) $('#f-error').textContent = r.error; // a validation error stops autosave until the next edit
+    return;
+  }
+  // from the first save on, the secret autosaves (state.currentId is now set)
+  state.currentId = r.secret.id;
+  $('#f-error').textContent = '';
   $('#f-ok').textContent = 'Saved';
   setTimeout(() => { $('#f-ok').textContent = ''; }, 1500);
-  await refreshSecrets(r.secret.id);
+  $('#f-meta').textContent = `Updated ${new Date(r.secret.updatedAt).toLocaleString()}`;
+  if (rev === state.rev) state.dirty = false;
+  else scheduleAutosave(); // typed while saving
+  await reloadList(); // the open form is not reloaded, so the cursor and the eye state stay put
 }
 
 function initVault() {
@@ -511,14 +567,21 @@ function initVault() {
   $('#btn-new-login').addEventListener('click', () => showNewForm('login'));
   $('#btn-new-note').addEventListener('click', () => showNewForm('note'));
   $$('[data-new]').forEach((b) => b.addEventListener('click', () => showNewForm(b.dataset.new)));
-  $('#btn-lock').addEventListener('click', async () => { await api.lock(); });
-  $('#btn-security').addEventListener('click', () => {
+  $('#btn-lock').addEventListener('click', async () => {
+    if (!(await canLeave())) return;
+    resetDirty(); // the user chose to discard
+    await api.lock();
+  });
+  $('#btn-security').addEventListener('click', async () => {
     if ($('#btn-security').getAttribute('aria-pressed') === 'true') { showEmpty(); return; }
+    if (!(await canLeave())) return;
     showEmpty(); // deselects the list
     showPane('security');
   });
 
   $('#detail-form').addEventListener('submit', (e) => { e.preventDefault(); saveCurrentSecret(); });
+  // typing, but not the generator's own options
+  $('#detail-form').addEventListener('input', (e) => { if (!e.target.closest('#gen-options')) markDirty(); });
 
   $('#f-eye').addEventListener('click', () => setEye($('#f-password').type === 'password'));
 
@@ -528,7 +591,7 @@ function initVault() {
       upper: $('#gen-upper').checked, lower: $('#gen-lower').checked,
       digits: $('#gen-digits').checked, symbols: $('#gen-symbols').checked,
     });
-    if (r.ok) { $('#f-password').value = r.password; setEye(true); }
+    if (r.ok) { $('#f-password').value = r.password; setEye(true); markDirty(); }
     else $('#f-error').textContent = r.error;
   };
   // explicit Generate button
@@ -543,7 +606,7 @@ function initVault() {
     if (!state.currentId) return;
     twoStepConfirm($('#f-delete'), 'Click again to delete', async () => {
       const r = await api.deleteSecret({ id: state.currentId });
-      if (r.ok) { toast('Deleted'); await refreshSecrets(); showEmpty(); }
+      if (r.ok) { toast('Deleted'); resetDirty(); await refreshSecrets(); showEmpty(); }
     });
   });
 
